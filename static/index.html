@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Startup Namer</title>
+<style>
+:root{--bg:#0f172a;--card:#1e293b;--text:#e2e8f0;--muted:#94a3b8;--accent:#6366f1;--tag:#334155}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,"Segoe UI",Tahoma,sans-serif;background:var(--bg);color:var(--text);line-height:1.6}
+.container{max-width:860px;margin:0 auto;padding:32px 16px}
+h1{margin:0 0 4px;font-size:1.8rem}
+.subtitle{color:var(--muted);margin:0 0 24px}
+textarea{width:100%;min-height:110px;padding:14px;border-radius:12px;border:1px solid var(--tag);background:var(--card);color:var(--text);font:inherit;resize:vertical}
+.row{display:flex;justify-content:space-between;align-items:center;margin-top:10px}
+.muted{color:var(--muted);font-size:.85rem}
+button{background:var(--accent);color:#fff;border:0;padding:10px 22px;border-radius:10px;font:inherit;font-weight:600;cursor:pointer}
+button:disabled{opacity:.6;cursor:wait}
+.error{color:#f87171;margin-top:12px}
+section{margin-top:28px}
+h2{font-size:1rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.tags{display:flex;flex-wrap:wrap;gap:8px}
+.tag{background:var(--tag);padding:4px 12px;border-radius:999px;font-size:.9rem}
+.tag.entity{background:#4c1d95}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
+.card{background:var(--card);border-radius:12px;padding:16px;border:1px solid var(--tag)}
+.card .name{font-size:1.15rem;font-weight:700;margin-bottom:6px}
+.card .why{color:var(--muted);font-size:.92rem}
+.hidden{display:none}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Startup Namer</h1>
+  <p class="subtitle">Describe your startup idea in Arabic or English and get legal &amp; product name suggestions.</p>
+
+  <textarea id="idea" maxlength="300" dir="auto"
+    placeholder="e.g. An AI-powered app that helps university students find part-time jobs."></textarea>
+  <div class="row">
+    <span class="muted" id="counter">0 / 300</span>
+    <button id="btn">Generate names</button>
+  </div>
+  <div class="error hidden" id="error"></div>
+
+  <div id="results" class="hidden">
+    <section>
+      <h2>Extracted NLP tags</h2>
+      <p class="muted">Language: <span id="lang"></span></p>
+      <div class="tags" id="tags"></div>
+    </section>
+    <section>
+      <h2>Legal startup names</h2>
+      <div class="grid" id="legal"></div>
+    </section>
+    <section>
+      <h2>Main product names</h2>
+      <div class="grid" id="product"></div>
+    </section>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+$("idea").addEventListener("input", () => {
+  $("counter").textContent = `${$("idea").value.length} / 300`;
+});
+
+function makeTag(text, cls = "tag") {
+  const s = document.createElement("span");
+  s.className = cls; s.dir = "auto"; s.textContent = text;
+  return s;
+}
+
+function makeCard(item) {
+  const d = document.createElement("div");
+  d.className = "card"; d.dir = "auto";
+  const n = document.createElement("div"); n.className = "name"; n.textContent = item.name;
+  const w = document.createElement("div"); w.className = "why"; w.textContent = item.rationale;
+  d.append(n, w);
+  return d;
+}
+
+function showError(msg) {
+  $("error").textContent = msg;
+  $("error").classList.remove("hidden");
+}
+
+function render(data) {
+  const { nlp, suggestions } = data;
+  $("lang").textContent = nlp.language === "ar" ? "Arabic" : "English";
+
+  const tags = $("tags");
+  tags.replaceChildren();
+  const seen = new Set();
+  [...nlp.keywords, ...nlp.noun_chunks].forEach(k => {
+    const key = k.toLowerCase().replace(/-/g, " ");
+    if (!seen.has(key)) { seen.add(key); tags.append(makeTag(k)); }
+  });
+  nlp.entities.forEach(e => tags.append(makeTag(`${e.text} · ${e.label}`, "tag entity")));
+
+  $("legal").replaceChildren(...suggestions.legal_names.map(makeCard));
+  $("product").replaceChildren(...suggestions.product_names.map(makeCard));
+  $("results").classList.remove("hidden");
+}
+
+$("btn").addEventListener("click", async () => {
+  const idea = $("idea").value.trim();
+  $("error").classList.add("hidden");
+  if (idea.length < 10) { showError("Please write at least 10 characters."); return; }
+
+  $("btn").disabled = true;
+  $("btn").textContent = "Generating...";
+  try {
+    const res = await fetch("/api/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idea })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Request failed");
+    render(data);
+  } catch (e) {
+    showError(e.message);
+  } finally {
+    $("btn").disabled = false;
+    $("btn").textContent = "Generate names";
+  }
+});
+</script>
+</body>
+</html>
